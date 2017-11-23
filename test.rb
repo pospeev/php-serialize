@@ -61,6 +61,7 @@ class TestPhpSerialize < Test::Unit::TestCase
 	test -42, 'i:-42;'
 	test 2147483647, "i:2147483647;", :name => 'Max Fixnum'
 	test -2147483648, "i:-2147483648;", :name => 'Min Fixnum'
+	test 4611686018427387904, "i:4611686018427387904;", :name => 'Min BigNum' # http://patshaughnessy.net/2014/1/9/how-big-is-a-bignum
 	test 4.2, 'd:4.2;'
 	test 'test', 's:4:"test";'
 	test :test, 's:4:"test";', :name => 'Symbol'
