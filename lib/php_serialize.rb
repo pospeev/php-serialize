@@ -20,6 +20,7 @@
 # SOFTWARE.
 
 require 'stringio'
+require 'securerandom'
 
 # PHP serialize() and unserialize() workalikes
 #
@@ -265,6 +266,9 @@ private
 				# class name (lowercase in PHP, grr)
 				len = string.read_until(':').to_i + 3 # quotes, seperator
 				klass = string.read(len)[1...-2].capitalize.intern # read it, kill useless quotes
+
+        # generate random name for PHP stdClass
+        klass = "#{klass}#{SecureRandom.hex(10)}".to_sym if klass == :Stdclass
 
 				# read the attributes
 				attrs = []
