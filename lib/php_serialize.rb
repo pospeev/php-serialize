@@ -40,125 +40,29 @@ require 'securerandom'
 # See http://www.php.net/serialize and http://www.php.net/unserialize for
 # details on the PHP side of all this.
 module PHP
+  ARRAY_TYPE = 'a'.freeze
+  OBJECT_TYPE = 'O'.freeze
+  STRING_TYPE = 's'.freeze
+  INTEGER_TYPE = 'i'.freeze
+  DOUBLE_TYPE = 'd'.freeze
+  NULL_TYPE = 'N'.freeze
+  BOOLEAN_TYPE = 'b'.freeze
+  OPEN_CURLY_BRACKET = '{'.freeze
+  COLON = ':'.freeze
+  EQUALS = '='.freeze
+  SEMICOLON = ';'.freeze
+
 	class StringIOReader < StringIO
 		# Reads data from the buffer until +char+ is found. The
 		# returned string will include +char+.
 		def read_until(char)
-			val, cpos = '', pos
+			val, cpos = nil, pos
 			if idx = string.index(char, cpos)
 				val = read(idx - cpos + 1)
 			end
 			val
 		end
 	end
-
-# string = PHP.serialize(mixed var[, bool assoc])
-#
-# Returns a string representing the argument in a form PHP.unserialize
-# and PHP's unserialize() should both be able to load.
-#
-# Array, Hash, Fixnum, Float, True/FalseClass, NilClass, String and Struct
-# are supported; as are objects which support the to_assoc method, which
-# returns an array of the form [['attr_name', 'value']..].  Anything else
-# will raise a TypeError.
-#
-# If 'assoc' is specified, Array's who's first element is a two value
-# array will be assumed to be an associative array, and will be serialized
-# as a PHP associative array rather than a multidimensional array.
-	def PHP.serialize(var, assoc = false) # {{{
-		s = ''
-		case var
-			when Array
-				s << "a:#{var.size}:{"
-				if assoc and var.first.is_a?(Array) and var.first.size == 2
-					var.each { |k,v|
-						s << PHP.serialize(k, assoc) << PHP.serialize(v, assoc)
-					}
-				else
-					var.each_with_index { |v,i|
-						s << "i:#{i};#{PHP.serialize(v, assoc)}"
-					}
-				end
-
-				s << '}'
-
-			when Hash
-				s << "a:#{var.size}:{"
-				var.each do |k,v|
-					s << "#{PHP.serialize(k, assoc)}#{PHP.serialize(v, assoc)}"
-				end
-				s << '}'
-
-			when Struct
-				# encode as Object with same name
-				s << "O:#{var.class.to_s.length}:\"#{var.class.to_s.downcase}\":#{var.members.length}:{"
-				var.members.each do |member|
-					s << "#{PHP.serialize(member, assoc)}#{PHP.serialize(var[member], assoc)}"
-				end
-				s << '}'
-
-			when String, Symbol
-				s << "s:#{var.to_s.bytesize}:\"#{var.to_s}\";"
-
-			when Integer
-				s << "i:#{var};"
-
-			when Float
-				s << "d:#{var};"
-
-			when NilClass
-				s << 'N;'
-
-			when FalseClass, TrueClass
-				s << "b:#{var ? 1 :0};"
-
-			else
-				if var.respond_to?(:to_assoc)
-					v = var.to_assoc
-					# encode as Object with same name
-					s << "O:#{var.class.to_s.length}:\"#{var.class.to_s.downcase}\":#{v.length}:{"
-					v.each do |k,v|
-						s << "#{PHP.serialize(k.to_s, assoc)}#{PHP.serialize(v, assoc)}"
-					end
-					s << '}'
-				else
-					raise TypeError, "Unable to serialize type #{var.class}"
-				end
-		end
-
-		s
-	end # }}}
-
-# string = PHP.serialize_session(mixed var[, bool assoc])
-#
-# Like PHP.serialize, but only accepts a Hash or associative Array as the root
-# type.  The results are returned in PHP session format.
-	def PHP.serialize_session(var, assoc = false) # {{{
-		s = ''
-		case var
-		when Hash
-			var.each do |key,value|
-				if key.to_s =~ /\|/
-					raise IndexError, "Top level names may not contain pipes"
-				end
-				s << "#{key}|#{PHP.serialize(value, assoc)}"
-			end
-		when Array
-			var.each do |x|
-				case x
-				when Array
-					if x.size == 2
-						s << "#{x[0]}|#{PHP.serialize(x[1])}"
-					else
-						raise TypeError, "Array is not associative"
-					end
-				end
-			end
-		else
-			raise TypeError, "Unable to serialize sessions with top level types other than Hash and associative Array"
-		end
-		s
-	end # }}}
 
 # mixed = PHP.unserialize(string serialized, [hash classmap, [bool assoc]])
 #
@@ -217,8 +121,8 @@ private
 		# determine a type
 		type = string.read(2)[0,1]
 		case type
-			when 'a' # associative array, a:length:{[index][value]...}
-				count = string.read_until('{').to_i
+			when ARRAY_TYPE # associative array, a:length:{[index][value]...}
+				count = string.read_until(OPEN_CURLY_BRACKET).to_i
 				val = vals = Array.new
 				count.times do |i|
 					vals << [do_unserialize(string, classmap, assoc, original_encoding), do_unserialize(string, classmap, assoc, original_encoding)]
@@ -262,9 +166,9 @@ private
 					end
 				end
 
-			when 'O' # object, O:length:"class":length:{[attribute][value]...}
+			when OBJECT_TYPE # object, O:length:"class":length:{[attribute][value]...}
 				# class name (lowercase in PHP, grr)
-				len = string.read_until(':').to_i + 3 # quotes, seperator
+				len = string.read_until(COLON).to_i + 3 # quotes, seperator
 				klass = string.read(len)[1...-2].capitalize.intern # read it, kill useless quotes
 
         # generate random name for PHP stdClass
@@ -272,11 +176,11 @@ private
 
 				# read the attributes
 				attrs = []
-				len = string.read_until('{').to_i
+				len = string.read_until(OPEN_CURLY_BRACKET).to_i
 
 				len.times do
 					attr = (do_unserialize(string, classmap, assoc, original_encoding))
-					attrs << [attr.intern, (attr << '=').intern, do_unserialize(string, classmap, assoc, original_encoding)]
+					attrs << [attr.intern, (attr << EQUALS).intern, do_unserialize(string, classmap, assoc, original_encoding)]
 				end
 				string.read(1)
 
@@ -302,21 +206,21 @@ private
 					val.__send__(attrassign, v)
 				end
 
-			when 's' # string, s:length:"data";
-				len = string.read_until(':').to_i + 3 # quotes, separator
+			when STRING_TYPE # string, s:length:"data";
+				len = string.read_until(COLON).to_i + 3 # quotes, separator
 				val = string.read(len)[1...-2] # read it, kill useless quotes
 				val = val.force_encoding(original_encoding) if val.respond_to?(:force_encoding)
 
-			when 'i' # integer, i:123
-				val = string.read_until(';').to_i
+			when INTEGER_TYPE # integer, i:123
+				val = string.read_until(SEMICOLON).to_i
 
-			when 'd' # double (float), d:1.23
-				val = string.read_until(';').to_f
+			when DOUBLE_TYPE # double (float), d:1.23
+				val = string.read_until(SEMICOLON).to_f
 
-			when 'N' # NULL, N;
+			when NULL_TYPE # NULL, N;
 				val = nil
 
-			when 'b' # bool, b:0 or 1
+			when BOOLEAN_TYPE # bool, b:0 or 1
 				val = (string.read(2)[0] == ?1 ? true : false)
 
 			else
